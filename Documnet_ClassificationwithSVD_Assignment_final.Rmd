@@ -1,0 +1,187 @@
+---
+title: "Document Classification"
+author: "kalpa"
+date: "8th August 2017"
+output:
+  html_document:
+    toc: yes
+    toc_depth: 3
+    toc_float: yes
+  pdf_document:
+    toc: yes
+    toc_depth: '3'
+---
+
+**NOTE** To remove previous objects stored in R environment
+
+```{r}
+
+rm(list = ls(all=TRUE))
+```
+
+## Goal
+* The goal of this activity is to classify document
+
+## Agenda 
+
+* Dataset:Newsgroups - sci.med & sci.space
+* 1: Creating a corpus
+* 2: Preprocessing operations
+* 3: Creating Document-Term matrix
+* 4: Apply SVD on Document-Term matrix
+* 4: Converting the "U" Matrix into Data Frame
+* 5: Including class information
+* 6: Classification of documents
+*    1: Using a kNN classifier
+
+
+## Reading & Understanding the Data
+
+### Read the Data
+### Create a corpus - a collection of text documents
+```{r}
+setwd("C:/insofe\\lab_assignments\\Text_Mining\\TM_Assignment_Data")
+library(tm)
+train.med = Corpus(DirSource("sci.med"),
+                    readerControl = list(language='en_US'))
+train.med[[1]]
+as.character(train.med[[1]])
+length(train.med)
+inspect(train.med[1])
+meta(train.med[[1]])
+
+train.space = Corpus(DirSource("sci.space"),
+                    readerControl = list(language='en_US'))
+```
+
+###Create a common corpus
+
+```{r}
+Corp_tot = c(train.med,train.space)
+Corp_tot = Corpus(VectorSource(unlist(Corp_tot)))
+rm(train.med,train.space)
+
+```
+
+### Necessary preprocessing
+
+```{r}
+
+toSpace <- content_transformer(function(x, pattern) gsub(pattern, " ", x))
+docs <- tm_map(Corp_tot, toSpace, "/")
+docs <- tm_map(Corp_tot, toSpace, "@")
+docs <- tm_map(Corp_tot, toSpace, "\\|")
+
+Corp_tot = tm_map(Corp_tot, removePunctuation)
+
+Corp_tot = tm_map(Corp_tot, removeNumbers)
+
+Corp_tot = tm_map(Corp_tot, tolower)
+
+Corp_tot = tm_map(Corp_tot, removeWords, stopwords("english"))
+#Corp_tot = tm_map(Corp_tot, removeWords, c(stopwords("english"),"organization","lines","can"))
+
+Corp_tot = tm_map(Corp_tot, stemDocument, language="english")
+
+Corp_tot = tm_map(Corp_tot, stripWhitespace)
+
+as.character(Corp_tot[[1]])
+
+```
+### Constructs or coerces to a document-term matrix
+
+```{r}
+dt_matrix <-DocumentTermMatrix(Corp_tot, 
+                               control=list(weighting=weightTfIdf, 
+                                            minWordLength=2, 
+                                            minDocFreq=5)) 
+dt_matrix
+inspect(dt_matrix[1:2,1:5])
+
+```
+
+### Remove sparse terms from a document-term matrix
+
+```{r}
+dt_matrix <- removeSparseTerms(dt_matrix, 0.75)
+```
+
+###Display detailed information on a document-term matrix
+
+```{r}
+
+inspect(dt_matrix[1:2,1:5])
+dim(dt_matrix)
+```
+
+### Applying SVD on Document-Term Matrix
+
+```{r}
+
+svd = svd(as.matrix(dt_matrix))
+matrix = svd$u
+
+```
+
+### Convert to dataframe
+
+```{r}
+
+data = as.data.frame(matrix)
+data <- data[apply(data, 1, function(x) !all(x==0)),]
+
+```
+
+### Attach Class label
+
+```{r}
+library(caret)
+target = as.factor(c(rep('med',1000), rep('space',1000)))
+data <- cbind(data,target)
+
+trainIndex <- createDataPartition(data$target, p = .7, list = F)
+train<- data[trainIndex, ]
+test <- data[-trainIndex, ]
+
+rm(list = setdiff(ls(),c("train","test","data")))
+
+```
+
+### Classification Task
+# Using Decision Tree
+
+```{r}
+
+library(rpart)
+rpart_model = rpart(target~.,train)
+a=table(test$target,predict(rpart_model,test,type = "class"))
+accu = sum(diag(a))/sum(a)
+  accu
+```
+
+
+### Using Naive Bayes
+
+```{r}
+library(e1071)
+nb_model = naiveBayes(x = train,y = train$target)
+a=table(test$target,predict(nb_model,test,type = "class"))
+accu = sum(diag(a))/sum(a)
+  accu
+```
+
+### Using U matrix ,do KNN classification. 
+
+```{r}
+  library(DMwR)
+library(class)
+
+  train_sub = subset(train,select=-c(target))
+  test_sub = subset(test,select=-c(target))
+  pred=knn(train_sub, test_sub, train$target, k = 3)
+  a = table(pred,test$target)
+  a
+  accu = sum(diag(a))/sum(a)
+  accu
+
+```
